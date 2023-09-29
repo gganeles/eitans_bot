@@ -1,11 +1,12 @@
 const fs = require('fs');
 const { Client, LocalAuth } = require('whatsapp-web.js');
+const {ticker, respond} = require('./utils.js')
 const qrcode = require('qrcode-terminal');
 
 const isoDateRegex = new RegExp('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}');
 const jsonPath = './session.json';
 
-const client = new Client({ puppeteer: { headless: false  }, authStrategy: new LocalAuth()});
+const client = new Client({ puppeteer: { headless: false }, authStrategy: new LocalAuth()});
 
 let data = {};
 
@@ -38,15 +39,16 @@ client.on('auth_failure', msg => {
 client.on('ready', () => {
     console.log('\x1b[32m%s\x1b[0m', 'READY');
     console.log(`Logged in as ${client.info.pushname} (${client.info.wid._serialized})`);
+    setInterval(ticker, 1000*5, client, data)
 });
 
 client.on('message', async msg => {
+    msg.reply('Hello');
     try {
-        if (msg.body === '!ping') {
-            await msg.reply('pong');
-        }
-        
+        respond(msg,data)
     } catch (err) {
         console.log(err)
     }
 });
+
+client.initialize();
