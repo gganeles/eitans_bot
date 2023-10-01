@@ -1,13 +1,10 @@
 const chrono = require('chrono-node');
-const { test } = require('node:test');
+
 
 function respond(msg, data) {
     //access this contacts state, or create data if it doesn't exist
     const contact = msg.getContact();
     const phone = contact.id.user
-    if (!data.timed){
-        data.timed = []
-    }
     if (data[phone]==undefined) {
         data[phone] = {states:[],tmp:{},events:[],defaults:{}};
     }
@@ -19,6 +16,15 @@ function respond(msg, data) {
     //initialize what will be pitched
     let pitch = ''
     //decide how each state gets handled
+    if (message.match(/cancel/gi)){
+        data[phone]['states'] = []
+        data[phone]['events'] = []
+        for (i in data['timed']) {
+            if (data['timed'][i].chat.match(new RegExp(phone))){
+                data['timed'].splice(i,1)
+            }
+        };
+    }
     if (stateList.length == 0) {
         msg.reply(`Hello there! 🧹🏢 We're excited to getting your room brand spanking fresh. 
         To start, how would you like to pay today?
@@ -33,7 +39,7 @@ function respond(msg, data) {
             flag = payment(msg,message,user_data)
         } else if (stateList.includes('address')){
             detail(message,user_data,'address')
-        } else if (stateList.includes('hours')){
+        } else if (stateList.includes('hours') ){
             detail(message,user_data,'hours')
         } else if (stateList.includes('date')){
             flag = pref_date(msg,message,user_data)
@@ -57,9 +63,11 @@ function respond(msg, data) {
         pitch = 'hours'
         stateList.push('hours')
     } else if (stateList.includes('hours')){
-        detail(message, user_data,'hours')
-        pitch = 'date'
-        stateList.push('date')
+        if (message.match(/\d/gi)) {
+            detail(message, user_data, 'hours')
+            pitch = 'date'
+            stateList.push('date')
+        }
     } else if (stateList.includes('date')){
         if (pref_date(msg, message, user_data)){
             stateList.push('laundry')
@@ -87,18 +95,23 @@ function respond(msg, data) {
                 case 1:
                     pitch = 'pay'
                     stateList.push('pay');
+                    break;
                 case 2:
                     pitch = 'address'
                     stateList.push('address');
+                    break;
                 case 3:
                     pitch = 'hours'
                     stateList.push('hours');
+                    break;
                 case 4:
                     pitch = 'date'
                     stateList.push('date');
+                    break;
                 case 5:
                     pitch = 'laundry'
                     stateList.push('laundry');
+                    break;
                 case 6:
                     pitch = 'notes'
                     stateList.push('notes');
@@ -141,9 +154,9 @@ Your responses will help us tailor the service to your needs. If you have any qu
 }
 
 function payment(msg, message, user_data) {
-    const choice = message.match(/cash|paypal/gi).at(0)
+    const choice = message.match(/cash|paypal/gi)
     if (choice) {
-        user_data['tmp']['payment'] = choice
+        user_data['tmp']['payment'] = choice.at(0)
         remove_from_list(user_data['states'], 'pay')
         return true
     } else {
@@ -184,7 +197,7 @@ If you would like to change any details, please type the number of what you woul
 }
 
 
-data_test = {}
+data_test = {timed:[]}
 
 class testMsg {
     constructor(body='') {
@@ -226,28 +239,31 @@ class timedMsg {
 
 function ticker(client,data) {
     const now = new Date()
-    data['timed'].forEach((msg) => {
+    data['timed'].forEach((msg, index) => {
         if (msg.tick(now,client)) {
-            delete msg;
+            data['timed'].splice(index,1)
         }
     })
 }
 
 function testResponse(input=''){
+    console.log(input)
     respond(new testMsg(input),data_test)
-    console.log(data_test)
 }
 
-// testResponse('start')
-// testResponse('cash')
-// testResponse('1234 madison ave')
-// testResponse('4')
-// testResponse('garbledy barbeldy')
-// testResponse('tuesday')
-// testResponse('nah')
-// testResponse('nothing')
-// testResponse('6')
-// testResponse('no nvm')
-// testResponse('ready')
+testResponse('start')
+testResponse('banki')
+testResponse('cash')
+testResponse('1234 madison ave')
+testResponse('4')
+testResponse('garbledy barbeldy')
+testResponse('tuesday')
+testResponse('nah')
+testResponse('nothing')
+testResponse('3')
+console.log(data_test)
+testResponse('ready')
+testResponse('ready')
+
 
 module.exports = {respond, ticker}
