@@ -1,12 +1,13 @@
 const chrono = require('chrono-node');
 
 
-function respond(msg, data) {
+async function respond(msg, data) {
     //access this contacts state, or create data if it doesn't exist
-    const contact = msg.getContact();
+    const contact = await msg.getContact();
+
     const phone = contact.id.user
     if (data[phone]==undefined) {
-        data[phone] = {states:[],tmp:{},events:[],defaults:{}};
+        data[phone] = {states:[],tmp:{},defaults:{}};
     }
     let stateList=data[phone]['states'];
     let user_data=data[phone]
@@ -19,20 +20,20 @@ function respond(msg, data) {
     if (message.match(/cancel/gi)){
         data[phone]['states'] = []
         data[phone]['events'] = []
-        for (i in data['timed']) {
-            if (data['timed'][i].chat.match(new RegExp(phone))){
-                data['timed'].splice(i,1)
+        for (i in data['events']) {
+            if (data['events'][i].timedMessage.chat.match(new RegExp(phone))){
+                data['events'].splice(i,1)
             }
         };
+        msg.reply('Your order has been cancelled. To start a new order, text anything.')
+        return
+    }
+    if (message.match(/penisparty/gi)){
+        msg.reply(list_orders(data))
     }
     if (stateList.length == 0) {
-        msg.reply(`Hello there! 🧹🏢 We're excited to getting your room brand spanking fresh. 
-        To start, how would you like to pay today?
-         - Cash 💵 
-         - PayPal📲`);
+        pitch = 'pay'
         stateList.push('pay');
-    } else if (stateList.includes('u')) {
-        stateList.push()
     } else if (stateList.includes('change')){
         let flag = true
         if (stateList.includes('pay')) {
@@ -67,6 +68,8 @@ function respond(msg, data) {
             detail(message, user_data, 'hours')
             pitch = 'date'
             stateList.push('date')
+        } else {
+            msg.reply('Sorry, I didn\'t understand. Please enter a number.')
         }
     } else if (stateList.includes('date')){
         if (pref_date(msg, message, user_data)){
@@ -81,13 +84,30 @@ function respond(msg, data) {
         detail(message,user_data,'notes');
         pitch = 'details'
         stateList.push('details');
-    } else if (stateList.includes('details')){
+    } else if (stateList.includes('ready')){
+        msg.reply('If you would like to order again, type "start"')
+        if (message.match(/start/gi)) {
+            msg.reply('If you would like to use your details from last time, type "last". Otherwise, type "new"')
+            data[phone]['states'] = ['restart']
+        }
+    } else if (stateList.includes('restart')){
+        if (message.match(/last/gi)) {
+            user_data['tmp'] = user_data['defaults']
+            stateList.push('date','change')
+            pitch = 'date'
+        } else if (message.match(/new/gi)) {
+            user_data['tmp'] = {}
+            stateList.push('pay')
+            pitch = 'pay'
+        }
+    }  else if (stateList.includes('details')){
+
         if (message.match(/ready/gi)) {
-            user_data['events'].push({...user_data['tmp']})
+            data['events'].push({details: {...user_data['tmp']}, timedMessage: new timedMsg('We will clean soon', user_data['tmp']['date'],phone+'@c.us')})
+            user_data['defaults'] = user_data['tmp']
             remove_from_list(stateList,'details')
             pitch = 'ready'
-            stateList.push('ready','u')
-            data['timed'].push(new timedMsg('We will clean soon', user_data['tmp']['date'],phone+'@c.us'))
+            stateList.push('ready')
         } else if (parseInt(message)!=NaN) {
             remove_from_list(stateList,'details')
             stateList.push('change')
@@ -117,15 +137,16 @@ function respond(msg, data) {
                     stateList.push('notes');
             }
         }
-    }
+    } 
     switch (pitch) {
         case 'pay':
-            msg.reply(`How would you like to pay today?
+            msg.reply(`Hello there! 🧹🏢 We're excited to getting your room brand spanking fresh. 
+            To start, how would you like to pay today?
              - Cash 💵 
              - PayPal📲`);
             break;
         case 'address':
-            msg.reply(`What is your address?`);
+            msg.reply(`What is your building name and room number?`);
             break;
         case 'hours':
             msg.reply(`Cost: Our cleaning service is priced at 90 NIS per hour.
@@ -136,8 +157,7 @@ Please indicate how many hours are needed:`)
             msg.reply(`What is your preferred date and time (We'll do our best to accommodate your preferred time slot):`)
             break;
         case 'laundry':
-            msg.reply(`Would you like us to wash and dry your dirty laundry and/ or sheets? 
-If so specify👖👗🛏 (please note an additional 20 NIS will be added for this service)`)
+            msg.reply(`Would you like us to wash and dry your dirty laundry and/ or sheets? 👖👗🛏 (please note an additional 20 NIS will be added for this service)`)
             break;
         case 'notes':
             msg.reply(`Do you have any specific areas or tasks you'd like us to focus on during the cleaning?🧹🧽`)
@@ -151,6 +171,7 @@ We do not accept cancellations 48 hours prior to the cleaning, the full amount w
 
 Your responses will help us tailor the service to your needs. If you have any questions or special requests, don't hesitate to ask! 😊`)
     }
+    console.log(data)
 }
 
 function payment(msg, message, user_data) {
@@ -166,7 +187,8 @@ function payment(msg, message, user_data) {
 }
 
 function pref_date(msg, message, user_data) {
-    const x = chrono.parse(message).at(0)
+    const now = new Date()
+    const x = chrono.parse(message, now, {forwardDate: true}).at(0)
     if (x) {
         detail(x.date(), user_data, 'date')
         return true
@@ -196,6 +218,13 @@ If you would like to change any details, please type the number of what you woul
     return messageContent;
 }
 
+function list_orders(data){
+    let messageContent = 'The outstanding orders are:\n\n';
+        for (let order of data['events']) {
+            messageContent += JSON.stringify(order['details']) + '\n';
+        }
+    return messageContent;
+}
 
 data_test = {timed:[]}
 
@@ -239,31 +268,33 @@ class timedMsg {
 
 function ticker(client,data) {
     const now = new Date()
-    data['timed'].forEach((msg, index) => {
-        if (msg.tick(now,client)) {
-            data['timed'].splice(index,1)
+    for (i in data['events']){
+        console.log(data['events'][i])
+        if (data['events'][i].timedMessage.tick(now,client)) {
+            data['events'].splice(i,1)
         }
-    })
+    }
 }
 
 function testResponse(input=''){
-    console.log(input)
     respond(new testMsg(input),data_test)
+ //   console.log(data_test)
 }
 
-testResponse('start')
-testResponse('banki')
-testResponse('cash')
-testResponse('1234 madison ave')
-testResponse('4')
-testResponse('garbledy barbeldy')
-testResponse('tuesday')
-testResponse('nah')
-testResponse('nothing')
-testResponse('3')
-console.log(data_test)
-testResponse('ready')
-testResponse('ready')
+
+    // testResponse('start')
+    // testResponse('banki')
+    // testResponse('cash')
+    // testResponse('1234 madison ave')
+    // testResponse('4')
+    // testResponse('garbledy barbeldy')
+    // testResponse('tuesday')
+    // testResponse('nah')
+    // testResponse('nothing')
+    // testResponse('3')
+    // console.log(data_test)
+    // testResponse('ready')
+    // testResponse('ready')
 
 
-module.exports = {respond, ticker}
+module.exports = {respond, ticker, testResponse, timedMsg}
